@@ -20,17 +20,18 @@ public class BiomeGenerator
 	private Voronoi voronoi;
 	private List<LineSegment> diagram;
 	private Dictionary<Biome, BiomeDescriptor> biomeMap = new Dictionary<Biome, BiomeDescriptor> {
-		{ Biome.Tundra                  , new BiomeDescriptor { Color = new Color(0.094f, 0.396f, 0.603f), Height = 0.000f * 2} },
-		{ Biome.Taiga                   , new BiomeDescriptor { Color = new Color(0.000f, 0.635f, 0.355f), Height = 0.001f * 2} },
-		{ Biome.Grassland               , new BiomeDescriptor { Color = new Color(0.484f, 0.365f, 0.290f), Height = 0.002f * 2} },
-		{ Biome.Desert                  , new BiomeDescriptor { Color = new Color(0.484f, 0.190f, 0.000f), Height = 0.003f * 2} },
-		{ Biome.Woodlands               , new BiomeDescriptor { Color = new Color(0.645f, 0.111f, 0.000f), Height = 0.004f * 2} },
-		{ Biome.TemperateForest         , new BiomeDescriptor { Color = new Color(0.871f, 0.556f, 0.000f), Height = 0.005f * 2} },
-		{ Biome.TropicalForest          , new BiomeDescriptor { Color = new Color(0.548f, 0.635f, 0.032f), Height = 0.006f * 2} },
-		{ Biome.TemperateRainForest     , new BiomeDescriptor { Color = new Color(0.032f, 0.619f, 0.000f), Height = 0.007f * 2} },
-		{ Biome.TropicalRainForest      , new BiomeDescriptor { Color = new Color(0.172f, 0.411f, 0.082f), Height = 0.008f * 2} },
+		{ Biome.Tundra                  , new BiomeDescriptor { Biome = Biome.Tundra             , Color = new Color(0.094f, 0.396f, 0.603f), SplatIndex = 5, Height = 0.009f * 2} },
+		{ Biome.Taiga                   , new BiomeDescriptor { Biome = Biome.Taiga              , Color = new Color(0.000f, 0.635f, 0.355f), SplatIndex = 6, Height = 0.008f * 2} },
+		{ Biome.Grassland               , new BiomeDescriptor { Biome = Biome.Grassland          , Color = new Color(0.484f, 0.365f, 0.290f), SplatIndex = 1, Height = 0.007f * 2} },
+		{ Biome.Desert                  , new BiomeDescriptor { Biome = Biome.Desert             , Color = new Color(0.484f, 0.190f, 0.000f), SplatIndex = 0, Height = 0.001f * 2} },
+		{ Biome.Woodlands               , new BiomeDescriptor { Biome = Biome.Woodlands          , Color = new Color(0.645f, 0.111f, 0.000f), SplatIndex = 1, Height = 0.002f * 2} },
+		{ Biome.TemperateForest         , new BiomeDescriptor { Biome = Biome.TemperateForest    , Color = new Color(0.871f, 0.556f, 0.000f), SplatIndex = 3, Height = 0.003f * 2} },
+		{ Biome.TropicalForest          , new BiomeDescriptor { Biome = Biome.TropicalForest     , Color = new Color(0.548f, 0.635f, 0.032f), SplatIndex = 4, Height = 0.004f * 2} },
+		{ Biome.TemperateRainForest     , new BiomeDescriptor { Biome = Biome.TemperateRainForest, Color = new Color(0.032f, 0.619f, 0.000f), SplatIndex = 2, Height = 0.005f * 2} },
+		{ Biome.TropicalRainForest      , new BiomeDescriptor { Biome = Biome.TropicalRainForest , Color = new Color(0.172f, 0.411f, 0.082f), SplatIndex = 4, Height = 0.006f * 2} },
 	};
 
+	// Massive memory leak
 	public void Display(Material mat)
 	{
 		foreach (var region in regions)

@@ -26,14 +26,12 @@ public class TerrainGenerator : MonoBehaviour
 	private OpenSimplexNoise NoiseMaker;
 	private BiomeGenerator BiomeGenerator;
 
-	[SerializeField]
-	private Texture2D groundTexture;
-
-	[SerializeField]
-	private Texture2D normalTexture;
+	public Texture2D[] groundTextures;
+	public Texture2D[] normalTextures;
 
 	private const int texturescalar = 2;
 	public Material mat;
+	private int alphamapLayers = 7;
 
 	// Use this for initialization
 	private void Start()
@@ -104,27 +102,30 @@ public class TerrainGenerator : MonoBehaviour
 
 		var terrainData = new TerrainData();
 		terrainData.heightmapResolution = ScaledHeightmapSize;
+		terrainData.alphamapResolution = ScaledHeightmapSize;
 		terrainData.size = new Vector3(ScaledChunkSize, ScaledChunkHeight, ScaledChunkSize);
 
 		terrainData.baseMapResolution = 33;
 
-		terrainData.SetHeights(0, 0, GenerateHeightmap(Z, X, ScaledHeightmapSize));
+		// Splatmap data is stored internally as a 3d array of floats, so declare a new empty array ready for your custom splatmap data:
+		float[,,] splatmapData = new float[terrainData.alphamapWidth, terrainData.alphamapHeight, terrainData.alphamapLayers];
 
-		SplatPrototype[] newProto = new SplatPrototype[1];
-		newProto[0] = new SplatPrototype();
-		// Copy parameters
-		newProto[0].metallic = 0;
-		newProto[0].smoothness = 0;
-		newProto[0].specular = Color.white;
-		newProto[0].tileOffset = Vector2.zero;
-		newProto[0].tileSize = new Vector2(ChunkSize / texturescalar, ChunkSize / texturescalar);
+		terrainData.SetHeights(0, 0, GenerateHeightmap(Z, X, ScaledHeightmapSize, out splatmapData));
 
-		// Only the albedo texture is different:
-		newProto[0].texture = groundTexture;
-		newProto[0].normalMap = normalTexture;
+		SplatPrototype[] newProto = new SplatPrototype[alphamapLayers];
+		newProto[0] = MakeSplat(groundTextures[0], normalTextures[0]); //desert
+		newProto[1] = MakeSplat(groundTextures[1], normalTextures[1]); //dry grass
+		newProto[2] = MakeSplat(groundTextures[2], normalTextures[2]); //earth
+		newProto[3] = MakeSplat(groundTextures[3], normalTextures[3]); //grass
+		newProto[4] = MakeSplat(groundTextures[4], normalTextures[4]); //moss
+		newProto[5] = MakeSplat(groundTextures[5], normalTextures[5]); //snow
+		newProto[6] = MakeSplat(groundTextures[6], normalTextures[6]); //riverbed
+		//newProto[7] = MakeSplat(groundTextures[7], normalTextures[7]);
+		//newProto[8] = MakeSplat(groundTextures[8], normalTextures[8]);
 
 		// Set prototype array
 		terrainData.splatPrototypes = newProto;
+		terrainData.SetAlphamaps(0, 0, splatmapData);
 
 		terrainData.RefreshPrototypes();
 
@@ -137,6 +138,20 @@ public class TerrainGenerator : MonoBehaviour
 		tc.terrainData = terrainData;
 
 		return terrainClone;
+	}
+
+	private SplatPrototype MakeSplat(Texture2D groundTexture, Texture2D normalTexture)
+	{
+		return new SplatPrototype
+		{
+			metallic = 0,
+			smoothness = 0,
+			specular = Color.white,
+			tileOffset = Vector2.zero,
+			tileSize = new Vector2(ChunkSize / texturescalar, ChunkSize / texturescalar),
+			texture = groundTexture,
+			normalMap = normalTexture,
+		};
 	}
 
 	private void LoadChunks(Vector3 playerChunk)
@@ -181,31 +196,49 @@ public class TerrainGenerator : MonoBehaviour
 		//return 0;
 	}
 
-	private float[,] GenerateHeightmap(int worldu, int worldv, int size)
+	private float[,] GenerateHeightmap(int worldu, int worldv, int size, out float[,,] splatmapData)
 	{
 		var ret = new float[size, size];
 
 		var sizef = (float)size;
 
-		for (int chunkx = 0; chunkx < size; chunkx++)
+		splatmapData = new float[size, size, alphamapLayers];
+
+		for (int chunky = 0; chunky < size; chunky++)
 		{
-			for (int chunkz = 0; chunkz < size; chunkz++)
+			for (int chunkx = 0; chunkx < size; chunkx++)
 			{
-				var chunku = chunkx / (sizef - 1);
-				var chunkv = chunkz / (sizef - 1);
+				var chunku = chunky / (sizef - 1);
+				var chunkv = chunkx / (sizef - 1);
 				var u = (worldu + chunku);
 				var v = (worldv + chunkv);
 
 				var biomeDescriptors = BiomeGenerator.GetBiomesAt(u * ChunkSize, v * ChunkSize);
 				var height = 0f;
 
+				// Setup an array to record the mix of texture weights at this point
+				float[] splatWeights = new float[alphamapLayers];
+
 				foreach (var desc in biomeDescriptors)
 				{
 					height += desc.BiomeDescriptor.Height * desc.Proportion;
+					splatWeights[desc.BiomeDescriptor.SplatIndex] += desc.Proportion;
 				}
 
-				ret[chunkx, chunkz] = height;
-				//MakeTerrainNoise(u, v) / 32;
+				ret[chunky, chunkx] = height;
+
+				// Sum of all textures weights must add to 1, so calculate normalization factor from sum of weights
+				float z = splatWeights.Sum();
+
+				// Loop through each terrain texture
+				for (int i = 0; i < alphamapLayers; i++)
+				{
+					// Normalize so that sum of all texture weights = 1
+					splatWeights[i] /= z;
+
+					// Assign this point to the splatmap array
+					splatmapData[chunky, chunkx, i] = splatWeights[i];
+				}
 			}
 		}
 		return ret;
