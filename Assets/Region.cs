@@ -2,7 +2,7 @@
 using Delaunay;
 using UnityEngine;
 
-internal class Region
+internal class BiomeRegion
 {
 	public Biome Biome { get; internal set; }
 	public Rect Bounds { get; internal set; }

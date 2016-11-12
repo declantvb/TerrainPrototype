@@ -7,11 +7,13 @@ using System.Linq;
 
 public class BiomeGenerator
 {
+	public const int poissonRetries = 20;
 	public int size;
-	public int biomeSize = 100;
+	public float biomeSeparation = 100f;
 	public float biomeBlendDist = 50f;
-	public int lakeMountainSize = 300;
+	public float lakeMountainSeparation = 300f;
 	public float lakeMountainBlendDist = 300f;
+	public float settlementSeparation = 800f;
 
 	public float baseScale = 1024;
 	public float baseOffset = 53;
@@ -26,13 +28,9 @@ public class BiomeGenerator
 	private OpenSimplexNoise noise;
 	private System.Random random;
 
-	private List<Vector2> bigPoisson;
-	private Voronoi bigVoronoi;
-	private List<SuperRegion> bigRegions;
-
-	private List<Vector2> poisson;
-	private Voronoi voronoi;
-	private List<Region> regions;
+	private List<SuperRegion> regions;
+	private List<BiomeRegion> biomes;
+	public List<Settlement> settlements;
 
 	private Dictionary<SuperBiome, SuperBiomeDescriptor> superBiomes;
 	private Dictionary<Biome, BiomeDescriptor> biomeMap;
@@ -45,16 +43,16 @@ public class BiomeGenerator
 
 		superBiomes = new Dictionary<SuperBiome, SuperBiomeDescriptor>
 		{
-			{ SuperBiome.Lake       , new SuperBiomeDescriptor { Biome = SuperBiome.Lake    , HeightFunc = (u, v) => 0.00f  } },
-			{ SuperBiome.Plains     , new SuperBiomeDescriptor { Biome = SuperBiome.Plains  , HeightFunc = (u, v) => 0.02f  } },
-			{ SuperBiome.Mountain   , new SuperBiomeDescriptor { Biome = SuperBiome.Mountain, HeightFunc = (u, v) => 0.1f } },
+			{ SuperBiome.Lake       , new SuperBiomeDescriptor { Biome = SuperBiome.Lake    , HeightFunc = (u, v) => 0.00f + (float)noise.eval(u,v) * 0.002f } },
+			{ SuperBiome.Plains     , new SuperBiomeDescriptor { Biome = SuperBiome.Plains  , HeightFunc = (u, v) => 0.03f + (float)noise.eval(u,v) * 0.005f } },
+			{ SuperBiome.Mountain   , new SuperBiomeDescriptor { Biome = SuperBiome.Mountain, HeightFunc = (u, v) => 0.10f + (float)noise.eval(u,v) * 0.020f } },
 		};
 
 		biomeMap = new Dictionary<Biome, BiomeDescriptor> {
 			{ Biome.Lake                    , new BiomeDescriptor { Biome = Biome.Lake               , SplatIndex = 7, HeightFunc = (u, v) => 0f} },
-			//{ Biome.Beach                   , new BiomeDescriptor { Biome = Biome.Beach              , SplatIndex = 7, HeightFunc = (u, v) => 0f} },
+			{ Biome.Beach                   , new BiomeDescriptor { Biome = Biome.Beach              , SplatIndex = 7, HeightFunc = (u, v) => 0f} }, //not used
 			{ Biome.Mountain                , new BiomeDescriptor { Biome = Biome.Mountain           , SplatIndex = 0, HeightFunc = (u, v) => 0f} },
-																																	    
+
 			{ Biome.Tundra                  , new BiomeDescriptor { Biome = Biome.Tundra             , SplatIndex = 5, HeightFunc = (u, v) => 0f} },
 			{ Biome.Taiga                   , new BiomeDescriptor { Biome = Biome.Taiga              , SplatIndex = 6, HeightFunc = (u, v) => 0f} },
 			{ Biome.Grassland               , new BiomeDescriptor { Biome = Biome.Grassland          , SplatIndex = 1, HeightFunc = (u, v) => 0f} },
@@ -69,46 +67,71 @@ public class BiomeGenerator
 
 	public void Generate()
 	{
-		var xOffset = random.Next(-500000, 500000);
-		var yOffset = random.Next(-500000, 500000);
+		// Make mountains and lakes
+		var bigPoissonEnum = Poisson.generate_poisson(random, size, lakeMountainSeparation, poissonRetries);
 
-		var bigPoissonEnum = Poisson.generate_poisson(random, size, lakeMountainSize, 20);
-
-		bigPoisson = new List<Vector2>();
+		var bigPoisson = new List<Vector2>();
 
 		while (bigPoissonEnum.MoveNext())
 		{
 			bigPoisson.Add(bigPoissonEnum.Current);
 		}
 
-		bigVoronoi = new Voronoi(bigPoisson, null, new Rect(-size, -size, size * 2, size * 2));
+		var bigVoronoi = new Voronoi(bigPoisson, null, new Rect(-size, -size, size * 2, size * 2));
 
-		bigRegions = MakeTerrainRegions(xOffset, yOffset);
+		regions = MakeTerrainRegions(bigPoisson, bigVoronoi);
 
-		////////
+		// Make biomes
+		var poissonEnum = Poisson.generate_poisson(random, size, biomeSeparation, poissonRetries);
 
-		var poissonEnum = Poisson.generate_poisson(random, size, biomeSize, 20);
-
-		poisson = new List<Vector2>();
+		var poisson = new List<Vector2>();
 
 		while (poissonEnum.MoveNext())
 		{
 			poisson.Add(poissonEnum.Current);
 		}
 
-		voronoi = new Voronoi(poisson, null, new Rect(-size, -size, size * 2, size * 2));
+		var voronoi = new Voronoi(poisson, null, new Rect(-size, -size, size * 2, size * 2));
 
-		regions = MakeBiomeRegions(xOffset, yOffset);
+		biomes = MakeBiomes(poisson, voronoi);
+
+		// Make settlements
+		var settlementPoissonEnum = Poisson.generate_poisson(random, size, settlementSeparation, poissonRetries);
+
+		var settlementPoisson = new List<Vector2>();
+
+		while (settlementPoissonEnum.MoveNext())
+		{
+			settlementPoisson.Add(settlementPoissonEnum.Current);
+		}
+
+		//settlementPoisson = FilterSettlements(settlementPoisson).ToList();
+
+		settlements = settlementPoisson.Select(x => new Settlement { Centre = x }).ToList();
 	}
 
-	private List<SuperRegion> MakeTerrainRegions(int xOffset, int yOffset)
+	private IEnumerable<Vector2> FilterSettlements(List<Vector2> settlementPoisson)
+	{
+		foreach (var poisson in settlementPoisson)
+		{
+			var landType = GetSuperBiomesAt(poisson.x, poisson.y).OrderBy(b => b.Proportion).LastOrDefault().BiomeDescriptor.Biome;
+
+			if (landType == SuperBiome.Plains)
+			{
+				yield return poisson;
+			}
+		}
+		yield break; 
+	}
+
+	private List<SuperRegion> MakeTerrainRegions(List<Vector2> bigPoisson, Voronoi bigVoronoi)
 	{
 		var regions = new List<SuperRegion>();
 
 		foreach (var regionCentre in bigPoisson)
 		{
-			var x = (int)regionCentre.x + xOffset;
-			var y = (int)regionCentre.y + yOffset;
+			var x = (int)regionCentre.x;
+			var y = (int)regionCentre.y;
 
 			var height = GetNoise(x, y, baseScale, baseOffset);
 
@@ -136,14 +159,14 @@ public class BiomeGenerator
 		return regions;
 	}
 
-	private List<Region> MakeBiomeRegions(int xOffset, int yOffset)
+	private List<BiomeRegion> MakeBiomes(List<Vector2> poisson, Voronoi voronoi)
 	{
-		var regions = new List<Region>();
+		var regions = new List<BiomeRegion>();
 
 		foreach (var regionCentre in poisson)
 		{
-			var x = (int)regionCentre.x + xOffset;
-			var y = (int)regionCentre.y + yOffset;
+			var x = (int)regionCentre.x;
+			var y = (int)regionCentre.y;
 
 			var superBiome = GetSuperBiomesAt(regionCentre.x, regionCentre.y).OrderBy(b => b.Proportion).LastOrDefault();
 
@@ -171,7 +194,7 @@ public class BiomeGenerator
 
 			var v = new Voronoi(points, null, bounds);
 
-			regions.Add(new Region
+			regions.Add(new BiomeRegion
 			{
 				Centre = regionCentre,
 				Points = points,
@@ -258,7 +281,7 @@ public class BiomeGenerator
 		var point = new Vector2(u, v);
 		var list = new List<SuperBiomeProportion>();
 
-		foreach (var region in bigRegions)
+		foreach (var region in regions)
 		{
 			if (region.Bounds.Overlaps(new Rect(point.x - lakeMountainBlendDist, point.y - lakeMountainBlendDist, lakeMountainBlendDist * 2, lakeMountainBlendDist * 2)))
 			{
@@ -304,7 +327,7 @@ public class BiomeGenerator
 		var point = new Vector2(u, v);
 		var list = new List<BiomeProportion>();
 
-		foreach (var region in regions)
+		foreach (var region in biomes)
 		{
 			if (region.Bounds.Overlaps(new Rect(point.x - biomeBlendDist, point.y - biomeBlendDist, biomeBlendDist * 2, biomeBlendDist * 2)))
 			{

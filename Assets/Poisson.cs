@@ -21,9 +21,9 @@ public static class Poisson
 		var samplePoints = new List<Vector2>();
 
 		//generate the first point randomly
-		//and updates 
-
-		var firstPoint = new Vector2(0, 0);
+		var firstPoint = new Vector2(
+			(float)rand.NextDouble() * size * 2 - size,
+			(float)rand.NextDouble() * size * 2 - size);
 
 		//update containers
 		processList.Add(firstPoint);
@@ -43,10 +43,10 @@ public static class Poisson
 				var newPoint = generateRandomPointAround(rand, point, min_dist);
 
 				var inBounds =
-					newPoint.x < firstPoint.x + size &&
-					newPoint.x > firstPoint.x - size &&
-					newPoint.y < firstPoint.y + size &&
-					newPoint.y > firstPoint.y - size;
+					newPoint.x < size &&
+					newPoint.x > -size &&
+					newPoint.y < size &&
+					newPoint.y > -size;
 
 				if (inBounds && !inNeighbourhood(grid, newPoint, min_dist, cellSize))
 				{

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -48,6 +49,33 @@ public class TerrainGenerator : MonoBehaviour
 		LoadedChunks = new List<LoadChunk>();
 
 		LoadChunks(new Vector3(0, 0, 0));
+
+		//show settlements
+		foreach (var s in BiomeGenerator.settlements)
+		{
+			var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+			var height = GetTerrainHeight(s.Centre);
+			sphere.transform.position = new Vector3(s.Centre.x, height, s.Centre.y);
+			sphere.transform.localScale = new Vector3(50,50,50);
+			sphere.GetComponent<MeshRenderer>().material.color = Color.red;
+		}
+	}
+
+	private float GetTerrainHeight(Vector2 centre)
+	{
+		foreach (var chunk in LoadedChunks)
+		{
+			if (chunk.Bounds.Contains(centre))
+			{
+				return chunk.Chunk.GetComponent<Terrain>().terrainData.GetHeight(ToChunkCoord(centre.x - ChunkSize * chunk.X), ToChunkCoord(centre.y - ChunkSize * chunk.Z));
+			}
+		}
+		return 500;
+	}
+
+	private int ToChunkCoord(float pos)
+	{
+		return (int)Mathf.Round(pos / ChunkSize*ScaledHeightmapSize);
 	}
 
 	public void Update()
@@ -177,7 +205,8 @@ public class TerrainGenerator : MonoBehaviour
 						X = i,
 						Z = j,
 						Chunk = newChunk,
-						Loaded = true
+						Loaded = true,
+						Bounds = new Rect(i * ChunkSize, j * ChunkSize, ChunkSize, ChunkSize)
 					});
 
 					var controller = newChunk.GetComponent<ChunkController>();
@@ -226,7 +255,7 @@ public class TerrainGenerator : MonoBehaviour
 
 				foreach (var desc in biomeDescriptors)
 				{
-					height += desc.BiomeDescriptor.HeightFunc(u,v) * desc.Proportion;
+					height += desc.BiomeDescriptor.HeightFunc(u, v) * desc.Proportion;
 					splatWeights[desc.BiomeDescriptor.SplatIndex] += desc.Proportion;
 				}
 
@@ -264,4 +293,5 @@ internal class LoadChunk
 	public int Z;
 	public GameObject Chunk;
 	public bool Loaded;
+	public Rect Bounds;
 }
