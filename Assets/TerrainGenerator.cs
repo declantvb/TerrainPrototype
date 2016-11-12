@@ -5,7 +5,7 @@ using UnityEngine;
 
 public class TerrainGenerator : MonoBehaviour
 {
-	public int ScaleDivider = 1;
+	public int Subdivisions = 8;
 	public int ChunkSize = 256;
 	public int ChunkHeight = 2048;
 	public int Seed = 100;
@@ -17,9 +17,9 @@ public class TerrainGenerator : MonoBehaviour
 	[SerializeField]
 	private UnityEngine.Object TerrainPrefab;
 
-	private int ScaledChunkSize { get { return ChunkSize / ScaleDivider; } }
-	private int ScaledChunkHeight { get { return ChunkHeight / ScaleDivider; } }
-	private int ScaledHeightmapSize { get { return ChunkSize / ScaleDivider + 1; } }
+	private int ScaledChunkSize { get { return ChunkSize; } }
+	private int ScaledChunkHeight { get { return ChunkHeight; } }
+	private int ScaledHeightmapSize { get { return (int)Mathf.Pow(2, Subdivisions) + 1; } }
 
 	public bool ShouldDisplay = false;
 
@@ -31,7 +31,7 @@ public class TerrainGenerator : MonoBehaviour
 
 	private const int texturescalar = 2;
 	public Material mat;
-	private int alphamapLayers = 7;
+	private int alphamapLayers = 8;
 
 	// Use this for initialization
 	private void Start()
@@ -39,7 +39,7 @@ public class TerrainGenerator : MonoBehaviour
 		//var rand = new System.Random(Seed);
 		NoiseMaker = new OpenSimplexNoise(Seed);
 
-		BiomeGenerator = new BiomeGenerator();
+		BiomeGenerator = new BiomeGenerator(ChunkSize * WorldSize);
 		var sw = new Stopwatch();
 		sw.Start();
 		BiomeGenerator.Generate();
@@ -54,7 +54,7 @@ public class TerrainGenerator : MonoBehaviour
 	{
 		if (ShouldDisplay)
 		{
-			BiomeGenerator.Display(mat);
+			//BiomeGenerator.Display(mat);
 		}
 	}
 
@@ -113,15 +113,14 @@ public class TerrainGenerator : MonoBehaviour
 		terrainData.SetHeights(0, 0, GenerateHeightmap(Z, X, ScaledHeightmapSize, out splatmapData));
 
 		SplatPrototype[] newProto = new SplatPrototype[alphamapLayers];
-		newProto[0] = MakeSplat(groundTextures[0], normalTextures[0]); //desert
+		newProto[0] = MakeSplat(groundTextures[0], normalTextures[0]); //dry earth
 		newProto[1] = MakeSplat(groundTextures[1], normalTextures[1]); //dry grass
 		newProto[2] = MakeSplat(groundTextures[2], normalTextures[2]); //earth
 		newProto[3] = MakeSplat(groundTextures[3], normalTextures[3]); //grass
 		newProto[4] = MakeSplat(groundTextures[4], normalTextures[4]); //moss
 		newProto[5] = MakeSplat(groundTextures[5], normalTextures[5]); //snow
 		newProto[6] = MakeSplat(groundTextures[6], normalTextures[6]); //riverbed
-		//newProto[7] = MakeSplat(groundTextures[7], normalTextures[7]);
-		//newProto[8] = MakeSplat(groundTextures[8], normalTextures[8]);
+		newProto[7] = MakeSplat(groundTextures[7], normalTextures[7]); //desert
 
 		// Set prototype array
 		terrainData.splatPrototypes = newProto;
@@ -200,28 +199,34 @@ public class TerrainGenerator : MonoBehaviour
 	{
 		var ret = new float[size, size];
 
-		var sizef = (float)size;
-
 		splatmapData = new float[size, size, alphamapLayers];
 
 		for (int chunky = 0; chunky < size; chunky++)
 		{
 			for (int chunkx = 0; chunkx < size; chunkx++)
 			{
-				var chunku = chunky / (sizef - 1);
-				var chunkv = chunkx / (sizef - 1);
+				var chunku = chunky / (size - 1f);
+				var chunkv = chunkx / (size - 1f);
 				var u = (worldu + chunku);
 				var v = (worldv + chunkv);
 
+				var baseBiomeDescriptors = BiomeGenerator.GetSuperBiomesAt(u * ChunkSize, v * ChunkSize);
+
 				var biomeDescriptors = BiomeGenerator.GetBiomesAt(u * ChunkSize, v * ChunkSize);
-				var height = 0f;
 
 				// Setup an array to record the mix of texture weights at this point
 				float[] splatWeights = new float[alphamapLayers];
 
+				var height = 0f;
+
+				foreach (var desc in baseBiomeDescriptors)
+				{
+					height += desc.BiomeDescriptor.HeightFunc(u, v) * desc.Proportion;
+				}
+
 				foreach (var desc in biomeDescriptors)
 				{
-					height += desc.BiomeDescriptor.Height * desc.Proportion;
+					height += desc.BiomeDescriptor.HeightFunc(u,v) * desc.Proportion;
 					splatWeights[desc.BiomeDescriptor.SplatIndex] += desc.Proportion;
 				}
 

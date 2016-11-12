@@ -1,5 +1,9 @@
 ﻿public enum Biome
 {
+	Lake,
+	Beach,
+	Mountain,
+
 	Tundra,
 	Taiga,
 	Grassland,
