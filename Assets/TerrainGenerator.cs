@@ -56,8 +56,35 @@ public class TerrainGenerator : MonoBehaviour
 			var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
 			var height = GetTerrainHeight(s.Centre);
 			sphere.transform.position = new Vector3(s.Centre.x, height, s.Centre.y);
-			sphere.transform.localScale = new Vector3(50,50,50);
+			sphere.transform.localScale = new Vector3(50, 50, 50);
 			sphere.GetComponent<MeshRenderer>().material.color = Color.red;
+		}
+	}
+
+	void OnDrawGizmos()
+	{
+		if (BiomeGenerator != null)
+		{
+			foreach (var s in BiomeGenerator.settlements)
+			{
+				foreach (var road in s.Roads)
+				{
+					var nodes = road.Points.Select((x, i) => new SplineInterpolator.SplineNode(new Vector3(x.x, GetTerrainHeight(x), x.y), (float)i / road.Points.Count, new Vector2(0, 1))).ToList();
+
+					SplineInterpolator interp = new SplineInterpolator(nodes);
+
+					Vector3 prevPos = interp.GetHermiteAtTime(0);
+					for (int c = 1; c <= 100; c++)
+					{
+						float currTime = c * 1f / 100;
+						Vector3 currPos = interp.GetHermiteAtTime(currTime);
+						float mag = (currPos - prevPos).magnitude * 2;
+						Gizmos.color = new Color(mag, 0, 0, 1);
+						Gizmos.DrawLine(prevPos, currPos);
+						prevPos = currPos;
+					}
+				}
+			}
 		}
 	}
 
@@ -75,7 +102,7 @@ public class TerrainGenerator : MonoBehaviour
 
 	private int ToChunkCoord(float pos)
 	{
-		return (int)Mathf.Round(pos / ChunkSize*ScaledHeightmapSize);
+		return (int)Mathf.Round(pos / ChunkSize * ScaledHeightmapSize);
 	}
 
 	public void Update()

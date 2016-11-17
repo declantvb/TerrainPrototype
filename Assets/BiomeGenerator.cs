@@ -28,9 +28,12 @@ public class BiomeGenerator
 	private OpenSimplexNoise noise;
 	private System.Random random;
 
-	private List<SuperRegion> regions;
-	private List<BiomeRegion> biomes;
+	public List<SuperRegion> regions;
+	public List<BiomeRegion> biomes; 
 	public List<Settlement> settlements;
+	public Dictionary<Vector2, SuperRegion> regionLookup;
+	public Dictionary<Vector2, BiomeRegion> biomeLookup;
+	public Dictionary<Vector2, Settlement> settlementLookup;
 
 	private Dictionary<SuperBiome, SuperBiomeDescriptor> superBiomes;
 	private Dictionary<Biome, BiomeDescriptor> biomeMap;
@@ -67,35 +70,84 @@ public class BiomeGenerator
 
 	public void Generate()
 	{
-		// Make mountains and lakes
-		var bigPoissonEnum = Poisson.generate_poisson(random, size, lakeMountainSeparation, poissonRetries);
+		var bounds = new Rect(-size, -size, size * 2, size * 2);
 
-		var bigPoisson = new List<Vector2>();
+		MakeMountainsAndLakes(bounds);
 
-		while (bigPoissonEnum.MoveNext())
+		MakeBiomes(bounds);
+
+		MakeSettlements(bounds);
+
+		MakeRoads();
+	}
+
+	private void MakeRoads()
+	{
+		foreach (var s in settlements)
 		{
-			bigPoisson.Add(bigPoissonEnum.Current);
+			foreach (var n in s.Neighbours)
+			{
+				var destination = settlementLookup[n];
+
+				var match = destination.Roads.FirstOrDefault(x => x.B == s);
+				if (match != null)
+				{
+					s.Roads.Add(match);
+					continue;
+				}
+
+				var points = new List<Vector2> { s.Centre };
+
+				var current = GetBiomeAt(s.Centre.x, s.Centre.y).Centre;
+				var target = GetBiomeAt(n.x, n.y).Centre;
+				var tries = 100;
+
+				// walk via biomes
+				bool endEarly = false;
+				while (tries > 0)
+				{
+					var neighbours = biomeLookup[current].Neighbours;
+					var haveRoad = neighbours.Where(x => biomeLookup[x].Roads.Any(r => r.B.Centre == current));
+					if (haveRoad.Any())
+					{
+						points.Add(haveRoad.First());
+						endEarly = true;
+						break;
+					}
+
+					var nearest = neighbours.MinBy(x => Vector2.Distance(n, x));
+
+					if (nearest == target) break;
+
+					points.Add(nearest);
+					current = nearest;
+					tries--;
+				}
+
+				if (!endEarly)
+				{
+					points.Add(n);
+				}
+
+				var newRoad = new Road
+				{
+					Points = points,
+					A = s,
+					B = destination
+				};
+				s.Roads.Add(newRoad);
+
+				for (int i = 1; i < points.Count - (endEarly ? 0 : 1); i++)
+				{
+					var point = points[i];
+					biomeLookup[point].Roads.Add(newRoad);
+				}
+			} 
 		}
+	}
 
-		var bigVoronoi = new Voronoi(bigPoisson, null, new Rect(-size, -size, size * 2, size * 2));
-
-		regions = MakeTerrainRegions(bigPoisson, bigVoronoi);
-
-		// Make biomes
-		var poissonEnum = Poisson.generate_poisson(random, size, biomeSeparation, poissonRetries);
-
-		var poisson = new List<Vector2>();
-
-		while (poissonEnum.MoveNext())
-		{
-			poisson.Add(poissonEnum.Current);
-		}
-
-		var voronoi = new Voronoi(poisson, null, new Rect(-size, -size, size * 2, size * 2));
-
-		biomes = MakeBiomes(poisson, voronoi);
-
-		// Make settlements
+	private void MakeSettlements(Rect bounds)
+	{
 		var settlementPoissonEnum = Poisson.generate_poisson(random, size, settlementSeparation, poissonRetries);
 
 		var settlementPoisson = new List<Vector2>();
@@ -105,9 +157,49 @@ public class BiomeGenerator
 			settlementPoisson.Add(settlementPoissonEnum.Current);
 		}
 
-		//settlementPoisson = FilterSettlements(settlementPoisson).ToList();
+		var settlementVoronoi = new Voronoi(settlementPoisson, null, bounds);
 
-		settlements = settlementPoisson.Select(x => new Settlement { Centre = x }).ToList();
+		settlements = settlementPoisson.Select(p => new Settlement
+		{
+			Centre = p,
+			Biome = GetBiomeAt(p.x, p.y),
+			Neighbours = settlementVoronoi.NeighborSitesForSite(p).Where(n => Vector2.Distance(p, n) < settlementSeparation * 2).ToList()
+		}).ToList();
+		settlementLookup = settlements.ToDictionary(x => x.Centre);
+	}
+
+	private void MakeBiomes(Rect bounds)
+	{
+		var poissonEnum = Poisson.generate_poisson(random, size, biomeSeparation, poissonRetries);
+
+		var poisson = new List<Vector2>();
+
+		while (poissonEnum.MoveNext())
+		{
+			poisson.Add(poissonEnum.Current);
+		}
+
+		var voronoi = new Voronoi(poisson, null, bounds);
+
+		biomes = MakeBiomes(poisson, voronoi);
+		biomeLookup = biomes.ToDictionary(x => x.Centre);
+	}
+
+	private void MakeMountainsAndLakes(Rect bounds)
+	{
+		var bigPoissonEnum = Poisson.generate_poisson(random, size, lakeMountainSeparation, poissonRetries);
+
+		var bigPoisson = new List<Vector2>();
+
+		while (bigPoissonEnum.MoveNext())
+		{
+			bigPoisson.Add(bigPoissonEnum.Current);
+		}
+
+		var bigVoronoi = new Voronoi(bigPoisson, null, bounds);
+
+		regions = MakeTerrainRegions(bigPoisson, bigVoronoi);
+		regionLookup = regions.ToDictionary(x => x.Centre);
 	}
 
 	private IEnumerable<Vector2> FilterSettlements(List<Vector2> settlementPoisson)
@@ -121,14 +213,14 @@ public class BiomeGenerator
 				yield return poisson;
 			}
 		}
-		yield break; 
+		yield break;
 	}
 
-	private List<SuperRegion> MakeTerrainRegions(List<Vector2> bigPoisson, Voronoi bigVoronoi)
+	private List<SuperRegion> MakeTerrainRegions(List<Vector2> poisson, Voronoi voronoi)
 	{
 		var regions = new List<SuperRegion>();
 
-		foreach (var regionCentre in bigPoisson)
+		foreach (var regionCentre in poisson)
 		{
 			var x = (int)regionCentre.x;
 			var y = (int)regionCentre.y;
@@ -140,7 +232,7 @@ public class BiomeGenerator
 				height < 0.3f ? SuperBiome.Lake :
 				SuperBiome.Plains;
 
-			var points = bigVoronoi.Region(regionCentre);
+			var points = voronoi.Region(regionCentre);
 
 			var bounds = GetBounds(points);
 
@@ -153,6 +245,7 @@ public class BiomeGenerator
 				Bounds = bounds,
 				Triangles = v.Triangles(),
 				Biome = biome,
+				Neighbours = voronoi.NeighborSitesForSite(regionCentre)
 			});
 		}
 
@@ -201,6 +294,7 @@ public class BiomeGenerator
 				Bounds = bounds,
 				Triangles = v.Triangles(),
 				Biome = biome,
+				Neighbours = voronoi.NeighborSitesForSite(regionCentre)
 			});
 		}
 
@@ -366,5 +460,26 @@ public class BiomeGenerator
 		}
 
 		return list;
+	}
+
+	public BiomeRegion GetBiomeAt(float u, float v)
+	{
+		var point = new Vector2(u, v);
+
+		foreach (var region in biomes)
+		{
+			if (region.Bounds.Overlaps(new Rect(point.x - biomeBlendDist, point.y - biomeBlendDist, biomeBlendDist * 2, biomeBlendDist * 2)))
+			{
+				foreach (var triangle in region.Triangles)
+				{
+					var within = triangle.Contains(point); if (within)
+					{
+						return region;
+					}
+				}
+			}
+		}
+
+		return null;
 	}
 }
