@@ -419,7 +419,7 @@ public class BiomeGenerator
 	public List<BiomeProportion> GetBiomesAt(float u, float v)
 	{
 		var point = new Vector2(u, v);
-		var list = new List<BiomeProportion>();
+		var list = new List<BiomeProportion>(32);
 
 		foreach (var region in biomes)
 		{

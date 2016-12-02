@@ -69,7 +69,7 @@ public class TerrainGenerator : MonoBehaviour
 			{
 				foreach (var road in s.Roads)
 				{
-					var nodes = road.Points.Select((x, i) => new SplineInterpolator.SplineNode(new Vector3(x.x, GetTerrainHeight(x), x.y), (float)i / road.Points.Count, new Vector2(0, 1))).ToList();
+					var nodes = road.Points.Select((x, i) => new SplineInterpolator.SplineNode(new Vector3(x.x, 0, x.y), (float)i / road.Points.Count, new Vector2(0, 1))).ToList();
 
 					SplineInterpolator interp = new SplineInterpolator(nodes);
 
@@ -78,9 +78,16 @@ public class TerrainGenerator : MonoBehaviour
 					{
 						float currTime = c * 1f / 100;
 						Vector3 currPos = interp.GetHermiteAtTime(currTime);
+
+						var height = GetTerrainHeight(new Vector2(currPos.x, currPos.z));
+
+						currPos.y = height + 1;
 						float mag = (currPos - prevPos).magnitude * 2;
-						Gizmos.color = new Color(mag, 0, 0, 1);
-						Gizmos.DrawLine(prevPos, currPos);
+
+						var cross = Vector3.Cross(currPos - prevPos, Vector3.up).normalized * 10;
+						Gizmos.DrawLine(prevPos - cross, currPos - cross);
+						Gizmos.DrawLine(prevPos + cross, currPos + cross);
+
 						prevPos = currPos;
 					}
 				}
@@ -97,7 +104,7 @@ public class TerrainGenerator : MonoBehaviour
 				return chunk.Chunk.GetComponent<Terrain>().terrainData.GetHeight(ToChunkCoord(centre.x - ChunkSize * chunk.X), ToChunkCoord(centre.y - ChunkSize * chunk.Z));
 			}
 		}
-		return 500;
+		return 500; // err?
 	}
 
 	private int ToChunkCoord(float pos)
